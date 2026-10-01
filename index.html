@@ -8,16 +8,17 @@
 :root{--accent:#7ec8f5;--bg1:#0b1b3a;--bg2:#1c3d73}
 *{box-sizing:border-box}
 body{margin:0;min-height:100vh;display:flex;justify-content:center;font-family:system-ui,sans-serif;color:#fff;background:linear-gradient(160deg,var(--bg1),var(--bg2)) fixed}
-#bg{position:fixed;inset:0;background-size:cover;background-position:center;opacity:.55;z-index:0}
+#bg{position:fixed;inset:-24px;background-size:cover;background-position:center;z-index:0}
 #snow{position:fixed;inset:0;pointer-events:none;z-index:5}
-main{position:relative;z-index:1;width:100%;max-width:420px;padding:48px 20px;text-align:center}
+main{--rx:0px;--ra:0;position:relative;z-index:1;width:100%;max-width:420px;padding:48px 20px;text-align:center;text-shadow:var(--rx) 0 rgba(255,0,60,var(--ra)),calc(var(--rx)*-1) 0 rgba(0,210,255,var(--ra))}
+a.link,.player,.avatar{box-shadow:var(--rx) 0 0 rgba(255,0,60,calc(var(--ra)*.7)),calc(var(--rx)*-1) 0 0 rgba(0,210,255,calc(var(--ra)*.7))}
 .avatar{width:110px;height:110px;border-radius:50%;object-fit:cover;border:3px solid var(--accent);background:#234}
 h1{margin:14px 0 6px;font-size:28px}
 .bio p{margin:4px 0;opacity:.85}
 .links{display:flex;flex-direction:column;gap:14px;margin-top:28px}
-a.link{display:flex;align-items:center;justify-content:center;gap:10px;padding:16px;border:2px solid var(--accent);border-radius:14px;color:#fff;text-decoration:none;font-weight:600;background:rgba(255,255,255,.12);backdrop-filter:blur(8px);transition:.2s}
+a.link{position:relative;display:flex;align-items:center;justify-content:center;padding:18px 62px;border:2px solid var(--accent);border-radius:14px;color:#fff;text-decoration:none;font-weight:600;background:rgba(255,255,255,.12);backdrop-filter:blur(8px);transition:.2s}
 a.link:hover{transform:translateY(-2px);background:rgba(255,255,255,.22)}
-a.link svg{width:22px;height:22px;flex:none}
+a.link svg{position:absolute;left:20px;top:50%;transform:translateY(-50%);width:34px;height:34px}
 .player{position:relative;margin-top:28px;padding:18px 16px 14px;border:2px solid var(--accent);border-radius:14px;background:rgba(255,255,255,.12);backdrop-filter:blur(8px)}
 .disc{position:relative;width:140px;height:140px;flex:none;cursor:pointer}
 .disc img{position:absolute;inset:0;width:100%;height:100%;border-radius:50%;object-fit:cover;background:#234}
@@ -43,6 +44,7 @@ canvas#viz{width:100%;height:52px;margin-top:10px;display:block}
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute"><filter id="tri" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values=".2126 .7152 .0722 0 0 .2126 .7152 .0722 0 0 .2126 .7152 .0722 0 0 0 0 0 1 0"/><feComponentTransfer><feFuncR id="fr" type="table" tableValues="0 .5 1"/><feFuncG id="fg" type="table" tableValues="0 .5 1"/><feFuncB id="fb" type="table" tableValues="0 .5 1"/></feComponentTransfer></filter></svg>
 <div id="bg"></div>
 <canvas id="snow"></canvas>
 <main>
@@ -78,6 +80,9 @@ const CONFIG = {
   musicTitle: "Paparazzi",   // গানের নাম (Spot 5)
   musicCover: "daed2e88-3517-4500-8f6a-83b663add15f(1).jpg", // গানের ছবি; খালি রাখলে avatar আসবে
   snow: true,                // snowfall চালু/বন্ধ
+  bgBlur: 3,                 // background blur (px)
+  bgOpacity: 0.9,            // background এর উজ্জ্বলতা (0 থেকে 1)
+  shake: true,               // beat এ shake + RGB displace
   links: [
     { label: "Free Project Files", url: "https://discord.gg/vAS76FG2h6" },
     { label: "YouTube",            url: "https://youtube.com/@shanzo_nv?si=-FbifbBYkK4-UtdM" },
@@ -116,7 +121,18 @@ document.title = CONFIG.name;
 document.documentElement.style.setProperty("--accent", CONFIG.accent);
 $("name").textContent = CONFIG.name;
 CONFIG.avatar ? $("avatar").src = CONFIG.avatar : $("avatar").style.display = "none";
-if (CONFIG.background) $("bg").style.backgroundImage = `url("${CONFIG.background}")`;
+if (CONFIG.background) {
+  const bg = $("bg"), hx = (CONFIG.accent || "#7ec8f5").replace("#", "");
+  const R = parseInt(hx.slice(0, 2), 16) / 255, G = parseInt(hx.slice(2, 4), 16) / 255, B = parseInt(hx.slice(4, 6), 16) / 255;
+  const mx = Math.max(R, G, B), mn = Math.min(R, G, B), d = mx - mn;
+  let h = 0; if (d) { h = mx === R ? ((G - B) / d) % 6 : mx === G ? (B - R) / d + 2 : (R - G) / d + 4; h *= 60; if (h < 0) h += 360; }
+  // tritone: shadow = black, highlight = white, midtone = HSB(accent hue, 45, 50)
+  const sat = .45, br = .5, f = n => { const k = (n + h / 60) % 6; return br - br * sat * Math.max(0, Math.min(k, 4 - k, 1)); };
+  [["fr", 5], ["fg", 3], ["fb", 1]].forEach(([id, n]) => $(id).setAttribute("tableValues", `0 ${f(n).toFixed(3)} 1`));
+  bg.style.backgroundImage = `url("${CONFIG.background}")`;
+  bg.style.filter = `url(#tri) blur(${CONFIG.bgBlur}px)`;
+  bg.style.opacity = CONFIG.bgOpacity;
+}
 CONFIG.bio.forEach(t => { const p = document.createElement("p"); p.textContent = t; $("bio").appendChild(p); });
 CONFIG.links.forEach(l => {
   const a = document.createElement("a");
@@ -150,25 +166,61 @@ else {
   $("title").textContent = CONFIG.musicTitle;
   $("cover").onerror = () => { if (CONFIG.avatar && !$("cover").src.endsWith(encodeURI(CONFIG.avatar))) $("cover").src = CONFIG.avatar; };
   $("cover").src = CONFIG.musicCover || CONFIG.avatar;
-  let ac, an, data, started = false;
+  let ac, an, data, binHz = 43, started = false;
   function setup() {
     ac = new (window.AudioContext || window.webkitAudioContext)();
     const src = ac.createMediaElementSource(audio);
-    an = ac.createAnalyser(); an.fftSize = 128; an.smoothingTimeConstant = .8;
+    an = ac.createAnalyser(); an.fftSize = 1024; an.smoothingTimeConstant = .6; an.minDecibels = -85; an.maxDecibels = -25;
     src.connect(an); an.connect(ac.destination);
-    data = new Uint8Array(an.frequencyBinCount); started = true;
+    data = new Uint8Array(an.frequencyBinCount); binHz = ac.sampleRate / an.fftSize; started = true;
+  }
+  const NB = 14, prev = new Array(NB).fill(0); let peak = .5;
+  function bands() {
+    const playing = started && !audio.paused, xs = [];
+    for (let k = 0; k < NB; k++) {
+      let x = 0;
+      if (playing) {
+        const lo = Math.max(1, Math.floor(60 * Math.pow(8000 / 60, k / NB) / binHz));
+        const hi = Math.max(lo + 1, Math.floor(60 * Math.pow(8000 / 60, (k + 1) / NB) / binHz));
+        let t = 0; for (let b = lo; b < hi; b++) t += data[b];
+        x = Math.pow(t / (hi - lo) / 255 * (1 + k * .05), 1.8);
+      }
+      xs.push(x);
+    }
+    peak = Math.max(peak * .997, .45, ...xs);
+    for (let k = 0; k < NB; k++) {
+      const v = xs[k] / peak;
+      prev[k] = v > prev[k] ? v * .7 + prev[k] * .3 : prev[k] * .78 + v * .22;
+    }
+  }
+  const mainEl = document.querySelector("main"), bgEl = $("bg"), rm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let avg = 0, last = 0, inten = 0;
+  function fx() {
+    if (CONFIG.shake && !rm && started && !audio.paused) {
+      let t = 0, cn = 0; for (let b = Math.max(1, Math.round(40 / binHz)); b <= Math.round(160 / binHz); b++) { t += data[b]; cn++; }
+      const e = t / cn, now = performance.now();
+      if (e > 90 && e > avg + 22 && now - last > 230) { inten = 1; last = now; }
+      avg = avg * .95 + e * .05;
+    }
+    inten *= .86;
+    if (inten < .02) {
+      if (inten !== 0) { inten = 0; mainEl.style.transform = bgEl.style.transform = ""; mainEl.style.setProperty("--ra", 0); mainEl.style.setProperty("--rx", "0px"); }
+      return;
+    }
+    const a = inten * 5, dx = (Math.random() - .5) * 2 * a, dy = (Math.random() - .5) * 2 * a;
+    mainEl.style.transform = bgEl.style.transform = `translate(${dx}px,${dy}px)`;
+    mainEl.style.setProperty("--rx", (inten * 4) + "px"); mainEl.style.setProperty("--ra", .85);
   }
   function draw() {
     requestAnimationFrame(draw);
     const w = cv.width = cv.clientWidth * devicePixelRatio, h = cv.height = cv.clientHeight * devicePixelRatio;
     ctx.clearRect(0, 0, w, h);
-    const n = 27, step = w / n, mid = h / 2;
+    const n = 27, c = (n - 1) / 2, step = w / n, mid = h / 2;
     if (started && !audio.paused) an.getByteFrequencyData(data);
+    fx(); bands();
     ctx.lineCap = "round"; ctx.lineWidth = step * .5; ctx.strokeStyle = "rgba(255,255,255,.88)";
     for (let i = 0; i < n; i++) {
-      const d = Math.abs(i - (n - 1) / 2) / ((n - 1) / 2);
-      const v = started && !audio.paused ? data[Math.floor(d * data.length * .7)] / 255 : 0;
-      const bh = Math.max(ctx.lineWidth * 1.6, v * h * .95);
+      const bh = Math.max(ctx.lineWidth * 1.6, prev[Math.min(NB - 1, Math.round(Math.abs(i - c)))] * h * .95);
       const x = i * step + step / 2;
       ctx.beginPath(); ctx.moveTo(x, mid - bh / 2 + ctx.lineWidth / 2); ctx.lineTo(x, mid + bh / 2 - ctx.lineWidth / 2); ctx.stroke();
     }
