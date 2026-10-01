@@ -82,7 +82,8 @@ const CONFIG = {
   snow: true,                // snowfall চালু/বন্ধ
   bgBlur: 3,                 // background blur (px)
   bgOpacity: 0.9,            // background এর উজ্জ্বলতা (0 থেকে 1)
-  shake: true,               // beat এ shake + RGB displace
+  shake: true,               // beat এ vertical shake + RGB displace
+  shakeSens: 1,              // shake সংবেদনশীলতা: কম shake চাইলে 0.7, বেশি চাইলে 1.3
   links: [
     { label: "Free Project Files", url: "https://discord.gg/vAS76FG2h6" },
     { label: "YouTube",            url: "https://youtube.com/@shanzo_nv?si=-FbifbBYkK4-UtdM" },
@@ -166,12 +167,17 @@ else {
   $("title").textContent = CONFIG.musicTitle;
   $("cover").onerror = () => { if (CONFIG.avatar && !$("cover").src.endsWith(encodeURI(CONFIG.avatar))) $("cover").src = CONFIG.avatar; };
   $("cover").src = CONFIG.musicCover || CONFIG.avatar;
-  let ac, an, data, binHz = 43, started = false;
+  let ac, an, an2, tb, data, binHz = 43, started = false;
   function setup() {
     ac = new (window.AudioContext || window.webkitAudioContext)();
     const src = ac.createMediaElementSource(audio);
     an = ac.createAnalyser(); an.fftSize = 1024; an.smoothingTimeConstant = .6; an.minDecibels = -85; an.maxDecibels = -25;
     src.connect(an); an.connect(ac.destination);
+    // beat detector: শুধু ১২০Hz এর নিচের bass (kick) শোনে, piano/vocal বাদ
+    const lp1 = ac.createBiquadFilter(), lp2 = ac.createBiquadFilter();
+    lp1.type = lp2.type = "lowpass"; lp1.frequency.value = lp2.frequency.value = 120;
+    an2 = ac.createAnalyser(); an2.fftSize = 1024; tb = new Uint8Array(an2.fftSize);
+    src.connect(lp1); lp1.connect(lp2); lp2.connect(an2);
     data = new Uint8Array(an.frequencyBinCount); binHz = ac.sampleRate / an.fftSize; started = true;
   }
   const NB = 14, prev = new Array(NB).fill(0); let peak = .5;
@@ -194,22 +200,28 @@ else {
     }
   }
   const mainEl = document.querySelector("main"), bgEl = $("bg"), rm = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  let avg = 0, last = 0, inten = 0;
+  let y = 0, vy = 0, env = 0, r1 = 0, r2 = 0, last = 0, lt = performance.now(), moving = false;
   function fx() {
+    const now = performance.now(), dt = Math.min(3, (now - lt) / 16.67); lt = now;
     if (CONFIG.shake && !rm && started && !audio.paused) {
-      let t = 0, cn = 0; for (let b = Math.max(1, Math.round(40 / binHz)); b <= Math.round(160 / binHz); b++) { t += data[b]; cn++; }
-      const e = t / cn, now = performance.now();
-      if (e > 90 && e > avg + 22 && now - last > 230) { inten = 1; last = now; }
-      avg = avg * .95 + e * .05;
+      an2.getByteTimeDomainData(tb);
+      let sq = 0; for (let i = 0; i < tb.length; i++) { const v = (tb[i] - 128) / 128; sq += v * v; }
+      const r = Math.sqrt(sq / tb.length), sens = CONFIG.shakeSens || 1;
+      // kick = bass হঠাৎ জোরে বাড়লে (absolute floor + আগের গড়ের চেয়ে বেশি + sharp rise)
+      if (r > .14 / sens && r > env * 1.5 && r - Math.min(r1, r2) > .05 / sens && now - last > 260) {
+        vy = 1.5 + 2 * Math.min(1, (r - env) / .25); last = now;
+      }
+      env = env * .97 + r * .03; r2 = r1; r1 = r;
     }
-    inten *= .86;
-    if (inten < .02) {
-      if (inten !== 0) { inten = 0; mainEl.style.transform = bgEl.style.transform = ""; mainEl.style.setProperty("--ra", 0); mainEl.style.setProperty("--rx", "0px"); }
+    vy += (-.3 * y - .35 * vy) * dt; y += vy * dt; // smooth spring: নিচে ধাক্কা → নরমভাবে ফিরে আসা
+    if (Math.abs(y) < .05 && Math.abs(vy) < .05) {
+      if (moving) { moving = false; y = vy = 0; mainEl.style.transform = bgEl.style.transform = ""; mainEl.style.setProperty("--ra", 0); mainEl.style.setProperty("--rx", "0px"); }
       return;
     }
-    const a = inten * 5, dx = (Math.random() - .5) * 2 * a, dy = (Math.random() - .5) * 2 * a;
-    mainEl.style.transform = bgEl.style.transform = `translate(${dx}px,${dy}px)`;
-    mainEl.style.setProperty("--rx", (inten * 4) + "px"); mainEl.style.setProperty("--ra", .85);
+    moving = true;
+    mainEl.style.transform = bgEl.style.transform = `translateY(${y.toFixed(2)}px)`;
+    const k = Math.min(1, Math.abs(y) / 5);
+    mainEl.style.setProperty("--rx", (k * 3.5) + "px"); mainEl.style.setProperty("--ra", .85 * k);
   }
   function draw() {
     requestAnimationFrame(draw);
